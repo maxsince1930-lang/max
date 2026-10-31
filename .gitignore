@@ -1,0 +1,8 @@
+.env
+.dev.vars
+.wrangler/
+node_modules/
+data/
+__pycache__/
+*.pyc
+*.sqlite3

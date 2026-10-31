@@ -1,0 +1,17 @@
+services:
+  showroom:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8088:8088"
+    environment:
+      DATA_DIR: /data
+      COOKIE_SECURE: "1"
+      # Set this to the public HTTPS origin, without a trailing slash.
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Set PUBLIC_ORIGIN to your HTTPS website origin}
+      # Empty for a root domain; /products for a subdirectory.
+      BASE_PATH: ${BASE_PATH:-}
+    volumes:
+      - showroom_data:/data
+volumes:
+  showroom_data:
