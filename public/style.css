@@ -12,3 +12,5 @@
 .filters.category-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;width:100%}.category-cards .chip{text-align:left;display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:10px;padding:20px;background:var(--white)}.category-cards .chip.active{background:var(--green);color:white}.category-cards strong{font-size:15px}.category-cards small{opacity:.7;font-size:12px}.toolbar:has(.category-cards){flex-wrap:wrap}.toolbar:has(.category-cards) .search{margin-left:auto}.category-cards+.search{max-width:450px}.brand home-copy{white-space:normal}
 
 .pagination{display:flex;align-items:center;justify-content:center;gap:24px;padding:25px 0}.category-cards .chip small{display:block}.category-cards .chip strong{letter-spacing:0}
+
+.card-preview img{object-fit:contain;background:#fff}.thumbs{grid-template-columns:repeat(auto-fit,minmax(55px,1fr))}.gallery-zoom{background:white}
