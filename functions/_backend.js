@@ -116,6 +116,17 @@ async function route(request,env) {
     return json({ok:!!env.MEDIA,database:true,media:!!env.MEDIA});
   }
   if(path.startsWith('/uploads/')) return media(request,env,path);
+  if(path==='/api/homepage-copy'&&['GET','PUT'].includes(method)) {
+    if(method==='PUT') await auth(request,env,true);
+    await run(env,'CREATE TABLE IF NOT EXISTS homepage_copy (id INTEGER PRIMARY KEY CHECK(id=1), content TEXT NOT NULL)');
+    if(method==='PUT') {
+      const {copy}=await readJSON(request), allowed=new Set(["brand", "brandSub", "language", "pageTitle", "eyebrow", "title", "number", "numberSmall", "side", "ribbon1", "ribbon2", "ribbon3", "all", "search", "featured", "tagline", "views", "video", "category", "explore", "defaultDescription", "emptyTitle", "emptyBody", "noMatch", "noMatchBody", "note", "feature1", "featureBody1", "feature2", "featureBody2", "feature3", "featureBody3", "footerBrand", "footerTagline", "copyright", "loading", "retry", "previous", "next"]);
+      if(!copy||typeof copy!=='object'||Array.isArray(copy))fail(400,'首页文字格式无效');
+      for(const [key,value] of Object.entries(copy)){if(!allowed.has(key)||!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!['en','zh'].includes(k))||Object.values(value).some(v=>typeof v!=='string'||v.length>1000))fail(400,'首页文字格式无效，每项最多 1000 字');}
+      await run(env,'INSERT INTO homepage_copy (id,content) VALUES (1,?) ON CONFLICT(id) DO UPDATE SET content=excluded.content',JSON.stringify(copy));
+    }
+    const row=await first(env,'SELECT content FROM homepage_copy WHERE id=1');return json({copy:row?JSON.parse(row.content):{}});
+  }
   if(path==='/api/settings'&&['GET','PUT'].includes(method)) {
     if(method==='PUT') await auth(request,env,true);
     await run(env,'CREATE TABLE IF NOT EXISTS site_settings (id INTEGER PRIMARY KEY CHECK(id=1), hero_description TEXT NOT NULL)');
