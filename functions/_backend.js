@@ -38,10 +38,10 @@ async function auth(request,env,mutate=false) {
 function product(row) { return {...row, images:JSON.parse(row.images), published:!!row.published}; }
 async function validate(data,env) {
   const p={};
-  for(const [k,max] of Object.entries({name:120,model:100,country:80,whatsapp:30,description:3000,category:60})) {
+  for(const [k,max] of Object.entries({name:120,model:100,country:80,whatsapp:30,description:3000,category:60,material:80,code:100})) {
     const v=data[k]??''; if(typeof v!=='string'||v.length>max) fail(400,'产品字段格式或长度无效'); p[k]=v.trim();
   }
-  if(!p.name||!p.model||!p.country) fail(400,'请填写产品名称、型号和国家');
+  if(!p.name||!p.model) fail(400,'请填写产品名称和型号');
   p.whatsapp=p.whatsapp.replace(/[\s()+-]/g,'');
   if(p.whatsapp&&!/^[1-9][0-9]{5,14}$/.test(p.whatsapp)) fail(400,'WhatsApp 请填写含国家区号的号码');
   if(data.published!==undefined&&typeof data.published!=='boolean') fail(400,'上架状态无效');
@@ -53,7 +53,7 @@ async function validate(data,env) {
   }
   p.video=data.video||null;
   if(p.video&&(typeof p.video!=='string'||!await first(env,"SELECT 1 FROM media WHERE id=? AND kind='video'",p.video))) fail(400,'视频不存在，请重新上传');
-  if(p.published&&ANGLES.some(k=>!images[k])) fail(400,'上架前请上传完整的六个方位图片；未完成时可先保存草稿');
+  if(p.published&&!Object.keys(images).length) fail(400,'上架前请至少上传一张产品图片');
   p.images=JSON.stringify(images); return p;
 }
 function signature(bytes,ext) {
@@ -111,6 +111,7 @@ async function route(request,env) {
     const origin=request.headers.get('Origin');if(origin&&origin!==url.origin) fail(403,'请求来源不匹配');
   }
   if(!env.DB) fail(503,'后台尚未配置：请绑定 Cloudflare D1 数据库并初始化数据表');
+  if(path.startsWith('/api/products')||path==='/api/import-product'){const cols=await all(env,'PRAGMA table_info(products)');for(const key of ['code','material'])if(!cols.some(c=>c.name===key)){try{await run(env,`ALTER TABLE products ADD COLUMN ${key} TEXT NOT NULL DEFAULT ''`);}catch(err){const refreshed=await all(env,'PRAGMA table_info(products)');if(!refreshed.some(c=>c.name===key))throw err;}}}
   if(path==='/api/health'&&method==='GET') {
     await first(env,'SELECT id FROM products LIMIT 1');
     return json({ok:!!env.MEDIA,database:true,media:!!env.MEDIA});
@@ -172,6 +173,14 @@ async function route(request,env) {
     const s=await auth(request,env,true);await run(env,'DELETE FROM sessions WHERE id=?',s.id);
     return json({},200,{'Set-Cookie':'showcase_session=; Max-Age=0; HttpOnly; Secure; SameSite=Strict; Path=/'});
   }
+  if(path==='/api/import-product'&&method==='POST') {
+    await auth(request,env,true);const data=await readJSON(request);
+    if(typeof data.id!=='string'||!/^imp_[a-f0-9]{24}$/.test(data.id))fail(400,'导入编号无效');
+    if(await first(env,'SELECT id FROM products WHERE id=?',data.id))return json({id:data.id,skipped:true});
+    const p=await validate(data,env);
+    await run(env,'INSERT OR IGNORE INTO products (id,name,model,country,whatsapp,description,category,published,images,video,created,version,code,material) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',data.id,p.name,p.model,p.country,p.whatsapp,p.description,p.category,p.published,p.images,p.video,now(),1,p.code,p.material);
+    return json({id:data.id,skipped:false});
+  }
   if(path==='/api/upload'&&method==='POST') return upload(request,env);
   if(path==='/api/products'&&method==='GET') {
     const admin=url.searchParams.get('admin')==='1';if(admin) await auth(request,env);
@@ -179,10 +188,10 @@ async function route(request,env) {
   }
   if(path==='/api/products'&&method==='POST') {
     await auth(request,env,true);const p=await validate(await readJSON(request),env),id=random().slice(0,24);
-    await run(env,'INSERT INTO products VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',id,p.name,p.model,p.country,p.whatsapp,p.description,p.category,p.published,p.images,p.video,now(),1);
+    await run(env,'INSERT INTO products (id,name,model,country,whatsapp,description,category,published,images,video,created,version,code,material) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',id,p.name,p.model,p.country,p.whatsapp,p.description,p.category,p.published,p.images,p.video,now(),1,p.code,p.material);
     return json({id});
   }
-  const match=/^\/api\/products\/([a-zA-Z0-9-]+)$/.exec(path);
+  const match=/^\/api\/products\/([a-zA-Z0-9_-]+)$/.exec(path);
   if(match) {
     const id=match[1], row=await first(env,'SELECT * FROM products WHERE id=?',id);
     if(method==='GET') {if(!row||(!row.published&&!await session(request,env))) fail(404,'产品不存在');return json(product(row));}
@@ -191,7 +200,7 @@ async function route(request,env) {
     if(data.version!==row.version) fail(409,'产品已在其他页面修改，请刷新后重试');
     let result;
     if(method==='DELETE') result=await run(env,'DELETE FROM products WHERE id=? AND version=?',id,data.version);
-    else {const p=await validate(data,env);result=await run(env,'UPDATE products SET name=?,model=?,country=?,whatsapp=?,description=?,category=?,published=?,images=?,video=?,version=version+1 WHERE id=? AND version=?',p.name,p.model,p.country,p.whatsapp,p.description,p.category,p.published,p.images,p.video,id,data.version);}
+    else {const p=await validate(data,env);result=await run(env,'UPDATE products SET name=?,model=?,country=?,whatsapp=?,description=?,category=?,published=?,images=?,video=?,code=?,material=?,version=version+1 WHERE id=? AND version=?',p.name,p.model,p.country,p.whatsapp,p.description,p.category,p.published,p.images,p.video,p.code,p.material,id,data.version);}
     if(result.meta.changes!==1) fail(409,'产品已在其他页面修改，请刷新后重试');return json({ok:true});
   }
   fail(404,'接口不存在');
