@@ -116,6 +116,17 @@ async function route(request,env) {
     return json({ok:!!env.MEDIA,database:true,media:!!env.MEDIA});
   }
   if(path.startsWith('/uploads/')) return media(request,env,path);
+  if(path==='/api/settings'&&['GET','PUT'].includes(method)) {
+    if(method==='PUT') await auth(request,env,true);
+    await run(env,'CREATE TABLE IF NOT EXISTS site_settings (id INTEGER PRIMARY KEY CHECK(id=1), hero_description TEXT NOT NULL)');
+    if(method==='PUT') {
+      const data=await readJSON(request);
+      if(typeof data.heroDescription!=='string'||data.heroDescription.length>1000) fail(400,'首页介绍不能超过 1000 字');
+      await run(env,'INSERT INTO site_settings (id,hero_description) VALUES (1,?) ON CONFLICT(id) DO UPDATE SET hero_description=excluded.hero_description',data.heroDescription);
+    }
+    const row=await first(env,'SELECT hero_description FROM site_settings WHERE id=1');
+    return json({heroDescription:row?.hero_description??'探索产品的设计与细节，从不同视角发现更多。\n六面图片与动态影像，让了解更进一步。'});
+  }
   if(path==='/api/session'&&method==='GET') {
     const s=await session(request,env), admin=await first(env,'SELECT id FROM admins LIMIT 1');
     return json({authenticated:!!s,csrf:s?.csrf??null,setupRequired:!admin});
