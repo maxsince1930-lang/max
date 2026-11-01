@@ -1,3 +1,4 @@
+import {accessRoute,requireVisitor} from './_visitor.js';
 const ANGLES = ['top', 'bottom', 'left', 'right', 'front', 'back'];
 const TYPES = {'image/jpeg':['jpg','image'], 'image/png':['png','image'], 'image/webp':['webp','image'], 'video/mp4':['mp4','video'], 'video/webm':['webm','video']};
 const encoder = new TextEncoder();
@@ -91,7 +92,7 @@ async function media(request,env,path) {
   if(!row||(!visible&&!await session(request,env))) fail(404,'文件不存在');
   if(!env.MEDIA) fail(503,'尚未绑定 Cloudflare R2 媒体存储');
   let start=0,end=row.size-1,status=200;
-  const headers={'Content-Type':row.mime,'Accept-Ranges':'bytes','Cache-Control':visible?'public, max-age=3600':'private, no-store'};
+  const headers={'Content-Type':row.mime,'Accept-Ranges':'bytes','Cache-Control':'private, no-store','Vary':'Cookie'};
   const range=request.headers.get('Range');
   if(range) {
     const m=/^bytes=(\d*)-(\d*)$/.exec(range);
@@ -111,6 +112,9 @@ async function route(request,env) {
     const origin=request.headers.get('Origin');if(origin&&origin!==url.origin) fail(403,'请求来源不匹配');
   }
   if(!env.DB) fail(503,'后台尚未配置：请绑定 Cloudflare D1 数据库并初始化数据表');
+  const access=await accessRoute(request,env,{auth,session,readJSON});
+  if(access)return access;
+  if((['GET','HEAD'].includes(method))&&(path.startsWith('/uploads/')||path.startsWith('/api/products')||['/api/settings','/api/homepage-copy'].includes(path)))await requireVisitor(request,env,await session(request,env));
   if(path.startsWith('/api/products')||path==='/api/import-product'){const cols=await all(env,'PRAGMA table_info(products)');for(const key of ['code','material'])if(!cols.some(c=>c.name===key)){try{await run(env,`ALTER TABLE products ADD COLUMN ${key} TEXT NOT NULL DEFAULT ''`);}catch(err){const refreshed=await all(env,'PRAGMA table_info(products)');if(!refreshed.some(c=>c.name===key))throw err;}}}
   if(path==='/api/health'&&method==='GET') {
     await first(env,'SELECT id FROM products LIMIT 1');
@@ -208,7 +212,7 @@ async function route(request,env) {
 export async function handle({request,env}) {
   let response;
   try { response=await route(request,env); }
-  catch(err) {response=json({error:err.status?err.message:'后台暂时不可用，请检查 D1 数据表和存储绑定'},err.status||503);}
+  catch(err) {response=json({error:err.status?err.message:'后台暂时不可用，请检查 D1 数据表和存储绑定',...(err.code?{code:err.code}:{})},err.status||503);}
   const headers=new Headers(response.headers);headers.set('X-Content-Type-Options','nosniff');headers.set('X-Frame-Options','SAMEORIGIN');headers.set('Referrer-Policy','strict-origin-when-cross-origin');
   return new Response(response.body,{status:response.status,headers});
 }
