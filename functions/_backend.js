@@ -119,13 +119,16 @@ async function route(request,env) {
   if(path==='/api/settings'&&['GET','PUT'].includes(method)) {
     if(method==='PUT') await auth(request,env,true);
     await run(env,'CREATE TABLE IF NOT EXISTS site_settings (id INTEGER PRIMARY KEY CHECK(id=1), hero_description TEXT NOT NULL)');
+    await run(env,'CREATE TABLE IF NOT EXISTS site_settings_en (id INTEGER PRIMARY KEY CHECK(id=1), hero_description TEXT NOT NULL)');
     if(method==='PUT') {
       const data=await readJSON(request);
       if(typeof data.heroDescription!=='string'||data.heroDescription.length>1000) fail(400,'首页介绍不能超过 1000 字');
+      if(data.heroDescriptionEn!==undefined){if(typeof data.heroDescriptionEn!=='string'||data.heroDescriptionEn.length>1000)fail(400,'英文首页介绍不能超过 1000 字');await run(env,'INSERT INTO site_settings_en (id,hero_description) VALUES (1,?) ON CONFLICT(id) DO UPDATE SET hero_description=excluded.hero_description',data.heroDescriptionEn);}
       await run(env,'INSERT INTO site_settings (id,hero_description) VALUES (1,?) ON CONFLICT(id) DO UPDATE SET hero_description=excluded.hero_description',data.heroDescription);
     }
     const row=await first(env,'SELECT hero_description FROM site_settings WHERE id=1');
-    return json({heroDescription:row?.hero_description??'探索产品的设计与细节，从不同视角发现更多。\n六面图片与动态影像，让了解更进一步。'});
+    const en=await first(env,'SELECT hero_description FROM site_settings_en WHERE id=1');
+    return json({heroDescriptionEn:en?.hero_description??'Explore the design and details of every product from a fresh perspective.\nSix views and product videos bring you closer.',heroDescription:row?.hero_description??'探索产品的设计与细节，从不同视角发现更多。\n六面图片与动态影像，让了解更进一步。'});
   }
   if(path==='/api/session'&&method==='GET') {
     const s=await session(request,env), admin=await first(env,'SELECT id FROM admins LIMIT 1');
